@@ -133,3 +133,11 @@ See the `LICENSE` file for more details.
 - Open-source libraries: TensorFlow, Flask, OpenCV  
 - Agricultural research datasets  
 - Contributors and community support  
+
+<div align="center">
+
+**Made with ❤️ by the neeru24**
+
+⭐ **Don't forget to star this repo if you found it helpful.** ⭐
+
+</div>
