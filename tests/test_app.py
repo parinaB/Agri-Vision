@@ -109,6 +109,7 @@ def test_infer_growth_stage_fallback(monkeypatch):
 
 def test_analyze_image_without_growth_detection(monkeypatch):
     monkeypatch.setattr(app, "yolo_model", None)
+    monkeypatch.setattr(app, "_models_loaded", True)
     dummy_img = np.zeros((100, 100, 3), dtype=np.uint8)
     result = app.analyze_image(dummy_img)
     assert "disease" in result
@@ -139,6 +140,7 @@ def test_generate_recommendations():
         "confidence": 0.9,
         "all_confidences": {},
         "health_score": 45.0,
+        "is_uncertain": True,
         "raw": [],
     }
     growth_res = {
@@ -151,7 +153,7 @@ def test_generate_recommendations():
     recs = app.generate_recommendations(disease_res, growth_res)
     assert isinstance(recs, list)
     assert len(recs) > 0
-    assert any("Consult an agricultural expert" in r for r in recs)
+    assert any("consult an agricultural expert" in r.lower() for r in recs)
     assert any("insecticides" in r for r in recs or "Aphids" in r)
     assert any("blossom" in r.lower() for r in recs)
 

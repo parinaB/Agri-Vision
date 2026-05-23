@@ -1,7 +1,9 @@
-{% extends "index.html" %} {% block content %} {% set disease =
-results.disease|default({}) %} {% set growth = results.growth|default({}) %} {%
-set disease_confidences = disease.all_confidences|default({}) %} {% set
-growth_boxes = growth.boxes|default([]) %}
+{% extends "index.html" %} 
+{% block content %} 
+{% set disease = results.disease|default({}) %} 
+{% set growth = results.growth|default({}) %} 
+{% set disease_confidences = disease.all_confidences|default({}) %} 
+{% set growth_boxes = growth.boxes|default([]) %}
 
 <section class="main-content">
     <div class="container" style="padding-bottom: 4rem">
@@ -11,72 +13,32 @@ growth_boxes = growth.boxes|default([]) %}
                     <i class="fas fa-robot"></i> Analysis Results
                 </h1>
                 <p class="results-subtitle">
-                    Your crop image was analyzed using deep learning models for
-                    disease detection and growth stage recognition.
+                    Your crop image was analyzed using deep learning models for disease detection and growth stage recognition.
                 </p>
             </div>
 
             {% if image_b64 %}
-            <div
-                class="result-img-container"
-                style="position: relative; margin-bottom: 2rem"
-            >
+            <div class="result-img-container" style="position: relative; margin-bottom: 2rem">
                 <div id="original-image-view" style="position: relative">
-                    <img
-                        id="result-img"
-                        alt="Analyzed Crop Image"
-                        src="data:image/jpeg;base64,{{ image_b64 }}"
-                        class="result-img"
-                    />
-                    <svg
-                        id="bbox-svg"
-                        class="result-svg"
-                        style="position: absolute; top: 0; left: 0"
-                        width="410"
-                        height="{{ (img_shape.height|default(1) / img_shape.width|default(1) * 410)|int }}"
-                    ></svg>
+                    <img id="result-img" alt="Analyzed Crop Image" src="data:image/jpeg;base64,{{ image_b64 }}" class="result-img" />
+                    <svg id="bbox-svg" class="result-svg" style="position: absolute; top: 0; left: 0" width="410" height="{{ (img_shape.height|default(1) / img_shape.width|default(1) * 410)|int }}"></svg>
                 </div>
 
                 {% if grad_cam_image_b64 %}
-                <div
-                    id="grad-cam-view"
-                    style="
-                        position: absolute;
-                        top: 0;
-                        left: 0;
-                        width: 100%;
-                        height: 100%;
-                        display: none;
-                    "
-                >
-                    <img
-                        id="grad-cam-img"
-                        alt="Grad-CAM Heatmap"
-                        src="data:image/jpeg;base64,{{ grad_cam_image_b64 }}"
-                        class="result-img"
-                        style="border: 2px solid var(--ai-blue)"
-                    />
+                <div id="grad-cam-view" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none;">
+                    <img id="grad-cam-img" alt="Grad-CAM Heatmap" src="data:image/jpeg;base64,{{ grad_cam_image_b64 }}" class="result-img" style="border: 2px solid var(--ai-blue)" />
                 </div>
-                <button
-                    id="toggle-ai-focus"
-                    class="btn btn-secondary"
-                    style="
-                        position: absolute;
-                        bottom: 15px;
-                        left: 50%;
-                        transform: translateX(-50%);
-                        z-index: 10;
-                    "
-                >
+                <button id="toggle-ai-focus" class="btn btn-secondary" style="position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 10; padding: 0.6rem 1.2rem; font-size: 0.85rem; border-radius: 50px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); background: var(--card-bg); color: var(--deep-forest); border: 1px solid var(--card-border); transition: var(--transition-smooth);">
                     <i class="fas fa-eye"></i> Show AI Focus
                 </button>
                 {% endif %}
             </div>
-            {% endif %} {% if results.warnings %}
+            {% endif %}
+
+            {% if results.warnings %}
             <div class="result-card" style="border-left: 4px solid #f59e0b">
                 <h2 class="results-section-title">
-                    <i class="fas fa-triangle-exclamation"></i> Degraded Mode
-                    Notice
+                    <i class="fas fa-triangle-exclamation"></i> Degraded Mode Notice
                 </h2>
                 <ul class="results-list">
                     {% for warning in results.warnings %}
@@ -88,315 +50,118 @@ growth_boxes = growth.boxes|default([]) %}
 
             <div class="result-card">
                 <h2 class="results-section-title">
-                    <i class="fas fa-stethoscope"></i> Disease Classification
-                    (ResNet50)
+                    <i class="fas fa-stethoscope"></i> Disease Classification (ResNet50)
                 </h2>
                 <ul class="results-list">
                     <li>
-                        <b>Predicted Class:</b> {{
-                        disease.predicted_class|default(disease.detected_issue|default("Unknown"))
-                        }}
-                        <span style="color: var(--text-muted)">
-                            (Confidence: {{
-                            disease.confidence|default(disease.model_confidence|default(0))|float|round(2)
-                            }})
+                        <b>Predicted Class:</b> {{ disease.predicted_class|default("Unknown") }}
+                        {% if disease.confidence is defined and disease.confidence is not none %}
+                        <span class="badge badge-confidence" style="background: linear-gradient(135deg, #17a2b8 0%, #117a8b 100%); color: white; padding: 0.25rem 0.6rem; font-size: 0.8rem; font-weight: 600; border-radius: 50px; margin-left: 0.5rem; display: inline-block;">
+                            <i class="fas fa-circle-check"></i> {{ (disease.confidence * 100)|round(1) }}% Confidence
                         </span>
+                        {% endif %}
                     </li>
                     <li>
-                        <b>Health Score:</b> {{
-                        disease.health_score|default(0)|float|round(2) }}%
-                        <div class="health-bar">
-                            <div
-                                class="health-fill"
-                                style="width: {{ disease.health_score|default(0)|float|round(0) }}%;"
-                            ></div>
+                        <b>Health Score:</b> {% set score = disease.health_score|default(0)|float %}{{ score|int if score == score|int else score }}%
+                        <div class="health-bar" style="margin-top: 0.4rem">
+                            <div class="health-fill" style="width: {{ disease.health_score|default(0)|float|round(0) }}%;"></div>
                         </div>
                     </li>
                     {% if results.disease_severity is defined %}
                     <li>
-                        <b>Disease Severity:</b> {{
-                        results.disease_severity|float|round(2) }}%
+                        <b>Disease Severity:</b> {{ results.disease_severity|float|round(2) }}%
                     </li>
                     {% endif %}
                 </ul>
-
-                {% if disease_confidences %}
-                <table class="results-table reveal-stagger">
-                    <tr class="reveal reveal-fade-in">
-                        <th>Disease Class</th>
-                        <th>Probability</th>
-                    </tr>
-                    {% for cname, prob in disease_confidences.items() %}
-                    <tr class="reveal reveal-fade-in">
-                        <td>{{ cname }}</td>
-                        <td>{{ prob|default(0)|float|round(4) }}</td>
-                    </tr>
-                    {% endfor %}
-                </table>
-                {% endif %}
             </div>
 
             <div class="result-card">
                 <h2 class="results-section-title">
-                    <i class="fas fa-seedling"></i> Growth Stage Detection
-                    (YOLOv8)
+                    <i class="fas fa-seedling"></i> Growth Stage Detection (YOLOv8)
                 </h2>
                 {% if growth.main_class %}
                 <ul class="results-list">
                     <li>
                         <b>Main Stage:</b> {{ growth.main_class }}
-                        <span style="color: var(--text-muted)">
-                            (Confidence: {{
-                            growth.confidence|default(0)|float|round(2) }})
+                        {% if growth.confidence is defined and growth.confidence is not none and growth.confidence > 0 %}
+                        <span class="badge badge-confidence" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%); color: white; padding: 0.25rem 0.6rem; font-size: 0.8rem; font-weight: 600; border-radius: 50px; margin-left: 0.5rem; display: inline-block;">
+                            <i class="fas fa-seedling"></i> {{ (growth.confidence * 100)|round(1) }}% Confidence
                         </span>
+                        {% endif %}
                     </li>
                 </ul>
-                {% if growth_boxes %}
                 <table class="results-table reveal-stagger">
-                    <tr class="reveal reveal-fade-in">
-                        <th>Stage Class</th>
-                        <th>Confidence</th>
-                        <th>BBox</th>
-                    </tr>
+                    <tr><th>Stage Class</th><th>Confidence</th><th>BBox</th></tr>
                     {% for box in growth_boxes %}
-                    <tr class="reveal reveal-fade-in">
+                    <tr>
                         <td>{{ box.class_name }}</td>
-                        <td>{{ box.confidence|default(0)|float|round(3) }}</td>
-                        <td>
-                            [{{ box.bbox[0]|int }}, {{ box.bbox[1]|int }}, {{
-                            box.bbox[2]|int }}, {{ box.bbox[3]|int }}]
-                        </td>
+                        <td>{{ (box.confidence|default(0)|float * 100)|round(2) }}%</td>
+                        <td class="bbox-cell">[{{ box.bbox[0]|int }}, {{ box.bbox[1]|int }}, {{ box.bbox[2]|int }}, {{ box.bbox[3]|int }}]</td>
                     </tr>
                     {% endfor %}
                 </table>
-                {% endif %} {% else %}
-                <p style="margin-bottom: 2rem; color: var(--text-muted)">
-                    No cotton growth stage detected.
-                </p>
+                {% else %}
+                <p style="margin-bottom: 2rem; color: var(--text-muted)">No cotton growth stage detected.</p>
+                {% endif %}
+                
+                {% if disease.is_uncertain %}
+                <li style="background: rgba(255, 193, 7, 0.12); padding: 0.8rem; border-left: 4px solid #ffc107; border-radius: 8px; margin-top: 1rem; list-style: none;">
+                    <b>⚠ Uncertain Prediction:</b> {{ disease.interpretation_message }}
+                </li>
+                {% elif disease.is_ambiguous %}
+                <li style="background: rgba(255, 152, 0, 0.12); padding: 0.8rem; border-left: 4px solid #ff9800; border-radius: 8px; margin-top: 1rem; list-style: none;">
+                    <b>⚠ Ambiguous Prediction:</b> {{ disease.interpretation_message }}
+                    <br /><b>Alternative:</b> {{ disease.alternative_prediction.class }} ({{ disease.alternative_prediction.confidence }}%)
+                </li>
                 {% endif %}
             </div>
 
             {% if weather %}
-            <div
-                class="weather-card"
-                style="
-                    margin: 2rem 0;
-                    padding: 1.5rem;
-                    background: linear-gradient(135deg, #667eea15, #764ba215);
-                    border: 1px solid #dee2e6;
-                    border-radius: 16px;
-                "
-            >
-                <h3 style="margin: 0 0 1rem; color: #343a40; font-size: 1.1rem">
-                    ☁️ Current Weather Conditions
-                </h3>
-                <div
-                    style="
-                        display: grid;
-                        grid-template-columns: repeat(
-                            auto-fit,
-                            minmax(130px, 1fr)
-                        );
-                        gap: 1rem;
-                    "
-                >
+            <div class="weather-card" style="margin: 2rem 0; padding: 1.5rem; background: linear-gradient(135deg, #667eea15, #764ba215); border: 1px solid #dee2e6; border-radius: 16px;">
+                <h3 style="margin: 0 0 1rem; color: #343a40; font-size: 1.1rem">☁️ Current Weather Conditions</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1rem;">
                     {% if weather.temperature is not none %}
-                    <div class="w-stat">
-                        <b>🌡️ {{ weather.temperature }}°C</b><br /><small
-                            >Temperature</small
-                        >
-                    </div>
-                    {% endif %} {% if weather.humidity is not none %}
-                    <div class="w-stat">
-                        <b>💧 {{ weather.humidity }}%</b><br /><small
-                            >Humidity</small
-                        >
-                    </div>
-                    {% endif %} {% if weather.precipitation is not none %}
-                    <div class="w-stat">
-                        <b>🌧️ {{ weather.precipitation }} mm</b><br /><small
-                            >Precipitation</small
-                        >
-                    </div>
-                    {% endif %} {% if weather.wind_speed is not none %}
-                    <div class="w-stat">
-                        <b>💨 {{ weather.wind_speed|round(0)|int }} km/h</b
-                        ><br /><small>Wind Speed</small>
+                    <div class="w-stat" style="text-align: center; padding: 0.75rem; background: white; border-radius: 10px;">
+                        <b>🌡️ {{ weather.temperature }}°C</b><br /><small>Temperature</small>
                     </div>
                     {% endif %}
-                    <div class="w-stat">
-                        <b
-                            >{{ weather.icon|default('🌤️') }} {{
-                            weather.description|default('N/A') }}</b
-                        ><br /><small>Condition</small>
+                    {% if weather.humidity is not none %}
+                    <div class="w-stat" style="text-align: center; padding: 0.75rem; background: white; border-radius: 10px;">
+                        <b>💧 {{ weather.humidity }}%</b><br /><small>Humidity</small>
+                    </div>
+                    {% endif %}
+                    <div class="w-stat" style="text-align: center; padding: 0.75rem; background: white; border-radius: 10px;">
+                        <b>{{ weather.icon|default('🌤️') }} {{ weather.description|default('N/A') }}</b><br /><small>Condition</small>
                     </div>
                 </div>
             </div>
-            {% endif %} {% if yield_estimate %}
+            {% endif %}
+
+            {% if yield_estimate %}
             <div class="result-card">
-                <h2 class="results-section-title">
-                    <i class="fas fa-chart-line"></i> Yield Estimate
-                </h2>
-                <pre class="results-pre">
-{{ yield_estimate|tojson(indent=2) }}</pre
-                >
+                <h2 class="results-section-title"><i class="fas fa-chart-line"></i> Yield Estimate</h2>
+                <pre class="results-pre">{{ yield_estimate|tojson(indent=2) }}</pre>
             </div>
             {% endif %}
 
             <div class="result-card">
-                <h2 class="results-section-title">
-                    <i class="fas fa-lightbulb"></i> Recommendations
-                </h2>
-                <ul class="results-list reveal-stagger">
+                <h2 class="results-section-title"><i class="fas fa-lightbulb"></i> Recommendations</h2>
+                <ul class="results-list">
                     {% for rec in results.recommendations|default([]) %}
-                    <li class="reveal reveal-slide-left">{{ rec }}</li>
+                    <li>{{ rec }}</li>
                     {% endfor %}
                 </ul>
             </div>
 
-            {% if results.farmer_insights %}
             <div class="result-card">
-                <h2 class="results-section-title">
-                    <i class="fas fa-comment-dots"></i> Farmer-Friendly Insights
-                </h2>
-                <ul class="results-list reveal-stagger">
-                    {% for insight in results.farmer_insights %}
-                    <li class="reveal reveal-slide-left">
-                        <b>•</b> {{ insight }}
-                    </li>
+                <h2 class="results-section-title"><i class="fas fa-comment-dots"></i> Farmer-Friendly Insights</h2>
+                <ul class="results-list">
+                    {% for insight in results.farmer_insights|default([]) %}
+                    <li><b>•</b> {{ insight }}</li>
                     {% endfor %}
                 </ul>
             </div>
-            {% endif %} {% if results.advanced_recommendations %}
-            <div class="result-card">
-                <h2 class="results-section-title">
-                    <i class="fas fa-lightbulb"></i> AI Recommendation System
-                </h2>
-                <ul class="results-list reveal-stagger">
-                    <li>
-                        <b>Irrigation Timing:</b> {{
-                        results.advanced_recommendations.irrigation_timing }}
-                    </li>
-                    <li>
-                        <b>Fertilizer Suggestions:</b> {{
-                        results.advanced_recommendations.fertilizer_suggestions
-                        }}
-                    </li>
-                    <li>
-                        <b>Pest Prevention Alerts:</b> {{
-                        results.advanced_recommendations.pest_prevention }}
-                    </li>
-                    <li>
-                        <b>Ideal Harvesting Window:</b> {{
-                        results.advanced_recommendations.harvesting_window }}
-                    </li>
-                </ul>
-            </div>
-            {% endif %}
-
-            <div
-                style="
-                    display: flex;
-                    justify-content: flex-end;
-                    gap: 1rem;
-                    margin-top: 2rem;
-                    margin-bottom: 2rem;
-                    flex-wrap: wrap;
-                "
-            >
-                <a href="/analyze" class="upload-btn"
-                    ><i class="fas fa-plus-circle"></i> Start New Analysis</a
-                >
-                <button onclick="readInsights()" class="upload-btn">
-                    <i class="fas fa-volume-up"></i> Voice Assistant
-                </button>
-                <button onclick="exportToPDF()" class="upload-btn">
-                    <i class="fas fa-file-pdf"></i> Export PDF
-                </button>
-            </div>
-
-            <div class="results-footer">
-                <b>Analysis Time:</b> {{ timestamp }}
-            </div>
-
-            <details class="results-details">
-                <summary class="results-summary">
-                    Show Full Model Output (JSON)
-                </summary>
-                <pre class="results-pre">{{ raw_json }}</pre>
-            </details>
         </div>
     </div>
 </section>
-
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-      {% if image_b64 and growth_boxes %}
-      function scale(x, inMin, inMax, outMin, outMax) {
-        return ((x - inMin) * (outMax - outMin) / (inMax - inMin)) + outMin;
-      }
-      var origW = {{ img_shape.width|default(1) }};
-      var origH = {{ img_shape.height|default(1) }};
-      var viewW = 410;
-      var viewH = Math.round(origH / origW * viewW);
-      var svg = document.getElementById("bbox-svg");
-      if (svg) {
-        svg.setAttribute("width", viewW);
-        svg.setAttribute("height", viewH);
-        {% for box in growth_boxes %}
-        (function () {
-          var x1 = scale({{ box.bbox[0]|default(0) }}, 0, origW, 0, viewW);
-          var y1 = scale({{ box.bbox[1]|default(0) }}, 0, origH, 0, viewH);
-          var x2 = scale({{ box.bbox[2]|default(0) }}, 0, origW, 0, viewW);
-          var y2 = scale({{ box.bbox[3]|default(0) }}, 0, origH, 0, viewH);
-          var rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-          rect.setAttribute("x", x1);
-          rect.setAttribute("y", y1);
-          rect.setAttribute("width", Math.max(0, x2 - x1));
-          rect.setAttribute("height", Math.max(0, y2 - y1));
-          rect.setAttribute("fill", "none");
-          rect.setAttribute("stroke", "#e51d22");
-          rect.setAttribute("stroke-width", "2");
-          svg.appendChild(rect);
-        })();
-        {% endfor %}
-      }
-      {% endif %}
-
-      var toggleButton = document.getElementById("toggle-ai-focus");
-      var originalImageView = document.getElementById("original-image-view");
-      var gradCamView = document.getElementById("grad-cam-view");
-      if (toggleButton && originalImageView && gradCamView) {
-        var showingGradCam = false;
-        toggleButton.addEventListener("click", function () {
-          originalImageView.style.display = showingGradCam ? "block" : "none";
-          gradCamView.style.display = showingGradCam ? "none" : "block";
-          toggleButton.innerHTML = showingGradCam ? '<i class="fas fa-eye"></i> Show AI Focus' : '<i class="fas fa-image"></i> Show Original';
-          showingGradCam = !showingGradCam;
-        });
-      }
-    });
-
-    function exportToPDF() {
-      window.print();
-    }
-
-    function readInsights() {
-      var insights = [];
-      {% if results.farmer_insights %}
-      {% for insight in results.farmer_insights %}
-      insights.push({{ insight|tojson }});
-      {% endfor %}
-      {% endif %}
-
-      if (!window.speechSynthesis) {
-        alert("Speech synthesis is not supported in this browser.");
-        return;
-      }
-      window.speechSynthesis.cancel();
-      var utterance = new SpeechSynthesisUtterance("Here are your crop analysis insights. " + insights.join(" "));
-      window.speechSynthesis.speak(utterance);
-    }
-</script>
-
 {% endblock %}

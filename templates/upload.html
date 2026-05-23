@@ -203,13 +203,11 @@ function useMyLocation() {
  
         <!-- Step checklist -->
         <div id="streamStepList" style="display:flex; flex-direction:column; gap:0.5rem;">
-            <div class="stream-step" id="step-upload_received"   data-label="File received">⬜ File received</div>
-            <div class="stream-step" id="step-preprocessing"     data-label="Preprocessing image">⬜ Preprocessing image</div>
-            <div class="stream-step" id="step-growth_inference"  data-label="YOLOv8 growth stage detection">⬜ YOLOv8 growth stage detection</div>
-            <div class="stream-step" id="step-disease_inference" data-label="ResNet50 disease classification">⬜ ResNet50 disease classification</div>
-            <div class="stream-step" id="step-recommendations"   data-label="Generating recommendations">⬜ Generating recommendations</div>
-            <div class="stream-step" id="step-complete"          data-label="Complete">⬜ Complete</div>
-                    </div>
+            <div class="stream-step" id="step-upload" data-label="Uploading image...">⬜ Uploading image...</div>
+            <div class="stream-step" id="step-analyze" data-label="Analyzing crop health...">⬜ Analyzing crop health...</div>
+            <div class="stream-step" id="step-predict" data-label="Generating prediction...">⬜ Generating prediction...</div>
+            <div class="stream-step" id="step-complete" data-label="Analysis complete">⬜ Analysis complete</div>
+        </div>
             
                     <!-- Current status message -->
                     <p id="streamStatusMsg" style="
@@ -238,7 +236,26 @@ function useMyLocation() {
             }
             </style>
             </form>
+            <script>
+                document.querySelector("form").addEventListener("submit", function (e) {
+                    const fileInput = document.getElementById("fileInput");
 
+                    if (!fileInput.files.length) {
+                        alert("Please upload an image first.");
+                        e.preventDefault();
+                        return;
+                    }
+                    const button = document.querySelector('button[type="submit"]');
+                    const progressPanel = document.getElementById("streamProgressPanel");
+
+                    button.disabled = true;
+                    button.innerHTML = "Analyzing...";
+
+                    if (progressPanel) {
+                        progressPanel.style.display = "block";
+                    }
+                });
+            </script>
             <div id="loadingOverlay" class="loading-overlay hidden" aria-hidden="true">
                 <div class="loading-panel">
                     <div class="loading-spinner"></div>
@@ -566,21 +583,6 @@ uploadArea.addEventListener('drop', (e) => {
 });
 
 
-document.querySelector('form').addEventListener('submit', (event)=>{
-
-    document
-      .getElementById('loadingOverlay')
-      .classList.remove('hidden');
-
-    const submitButton=
-    document.querySelector('.action-btn');
-
-    submitButton.disabled=true;
-
-    submitButton.innerHTML=
-    '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
-
-
 document.querySelector('form').addEventListener('submit', async function(event) {
     event.preventDefault();   // stop normal form submission
  
@@ -597,19 +599,29 @@ document.querySelector('form').addEventListener('submit', async function(event) 
         alert('Please select a crop image first.');
         return;
     }
+
+    if (submitBtn.disabled) return; // Prevent duplicate submissions
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
  
-    // Show progress panel, hide submit button
+    // Show progress panel, hide submit button (or disable it during progress)
     panel.style.display = 'block';
     submitBtn.style.display = 'none';
     if (loadingOverlay) loadingOverlay.classList.add('hidden');
  
-    // Reset all steps
-    document.querySelectorAll('.stream-step').forEach(el => {
-        el.classList.remove('done', 'active', 'error-step');
-        el.textContent = '⬜ ' + el.dataset.label;
+    // Reset all steps to default unchecked
+    const steps = ['upload', 'analyze', 'predict', 'complete'];
+    steps.forEach(s => {
+        const el = document.getElementById('step-' + s);
+        if (el) {
+            el.className = 'stream-step';
+            el.textContent = '⬜ ' + el.dataset.label;
+        }
     });
     progressBar.style.width = '0%';
     statusMsg.textContent = '';
+    statusMsg.style.color = '';
+    progressBar.style.background = '';
  
     // Build FormData from the form
     const formData = new FormData(form);
@@ -655,32 +667,57 @@ document.querySelector('form').addEventListener('submit', async function(event) 
                 statusMsg.textContent = message;
  
                 if (step === 'error') {
-                    // Mark all active steps as error
-                    document.querySelectorAll('.stream-step.active').forEach(el => {
-                        el.classList.remove('active');
-                        el.classList.add('error-step');
-                        el.textContent = '❌ ' + el.dataset.label;
+                    // Mark active steps as error-step
+                    steps.forEach(s => {
+                        const el = document.getElementById('step-' + s);
+                        if (el && el.classList.contains('active')) {
+                            el.className = 'stream-step error-step';
+                            el.textContent = '❌ ' + el.dataset.label;
+                        }
                     });
+                    statusMsg.textContent = '❌ ' + message;
                     statusMsg.style.color = '#ff6b6b';
                     progressBar.style.background = '#ff6b6b';
+                    
                     submitBtn.style.display = '';
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = '<i class="fas fa-magnifying-glass"></i> Try Again';
                     return;
                 }
  
-                // Mark previous active as done
-                document.querySelectorAll('.stream-step.active').forEach(el => {
-                    el.classList.remove('active');
-                    el.classList.add('done');
-                    el.textContent = '✅ ' + el.dataset.label;
-                });
- 
-                // Mark current step as active
-                const stepEl = document.getElementById('step-' + step);
-                if (stepEl) {
-                    stepEl.classList.add('active');
-                    stepEl.textContent = '⏳ ' + stepEl.dataset.label;
+                // Map backend step to our frontend 4 UI steps:
+                // upload: upload_received
+                // analyze: preprocessing, growth_inference, disease_inference
+                // predict: recommendations
+                // complete: complete
+                let uiStep = '';
+                if (step === 'upload_received') {
+                    uiStep = 'upload';
+                } else if (step === 'preprocessing' || step === 'growth_inference' || step === 'disease_inference') {
+                    uiStep = 'analyze';
+                } else if (step === 'recommendations') {
+                    uiStep = 'predict';
+                } else if (step === 'complete') {
+                    uiStep = 'complete';
+                }
+
+                if (uiStep) {
+                    const currentIndex = steps.indexOf(uiStep);
+                    steps.forEach((s, idx) => {
+                        const el = document.getElementById('step-' + s);
+                        if (el) {
+                            if (idx < currentIndex) {
+                                el.className = 'stream-step done';
+                                el.textContent = '✅ ' + el.dataset.label;
+                            } else if (idx === currentIndex) {
+                                el.className = 'stream-step active';
+                                el.textContent = '⏳ ' + el.dataset.label;
+                            } else {
+                                el.className = 'stream-step';
+                                el.textContent = '⬜ ' + el.dataset.label;
+                            }
+                        }
+                    });
                 }
  
                 // On complete — store payload and redirect via hidden form
@@ -688,10 +725,10 @@ document.querySelector('form').addEventListener('submit', async function(event) 
                     finalPayload = data;
  
                     // Mark complete step as done
-                    if (stepEl) {
-                        stepEl.classList.remove('active');
-                        stepEl.classList.add('done');
-                        stepEl.textContent = '✅ ' + stepEl.dataset.label;
+                    const completeEl = document.getElementById('step-complete');
+                    if (completeEl) {
+                        completeEl.className = 'stream-step done';
+                        completeEl.textContent = '✅ ' + completeEl.dataset.label;
                     }
  
                     statusMsg.textContent = '✅ Done! Loading results...';
@@ -720,6 +757,16 @@ document.querySelector('form').addEventListener('submit', async function(event) 
     } catch (err) {
         statusMsg.textContent = '❌ Connection error: ' + err.message;
         statusMsg.style.color = '#ff6b6b';
+        progressBar.style.background = '#ff6b6b';
+        
+        steps.forEach(s => {
+            const el = document.getElementById('step-' + s);
+            if (el && el.classList.contains('active')) {
+                el.className = 'stream-step error-step';
+                el.textContent = '❌ ' + el.dataset.label;
+            }
+        });
+        
         submitBtn.style.display = '';
         submitBtn.disabled = false;
         submitBtn.innerHTML = '<i class="fas fa-magnifying-glass"></i> Try Again';
