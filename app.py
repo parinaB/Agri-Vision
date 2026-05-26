@@ -1,16 +1,9 @@
 """
 Agri-Vision Flask Application
 Unified inference for disease classification (ResNet50) and growth stage prediction (YOLOv8)
-Thread-safe execution for production environments with Celery Async Support.
-Optimized via a Two-Pointer Ambiguity Filter for overlapping disease classes.
 """
-
-from __future__ import annotations
-
-import base64
-import hashlib
-import json
 import logging
+from flask import Flask, render_template, request, jsonify, flash, redirect, url_for
 import os
 import random
 import re
@@ -40,14 +33,9 @@ from flask_cors import CORS
 from PIL import Image
 from torchvision import transforms
 from ultralytics import YOLO
-from werkzeug.utils import secure_filename
-
-from services.weather_service import (
-    generate_weather_recommendations,
-    geocode_city,
-    get_weather,
-)
-from services.yield_service import estimate_yield
+import json
+from jinja2 import Environment, FileSystemLoader
+from model_registry import registry
 
 load_dotenv()
 
@@ -253,28 +241,24 @@ yolo_model = None
 
 
 def load_models():
-    """Wrapper for backward compatibility"""
-    global resnet_model, yolo_model, grad_cam_instance
-
+    global resnet_model, yolo_model
     if resnet_model is None:
         try:
-            resnet_model, yolo_model = model_manager.load_models()
-
-            # Keep compatibility with newer PyTorch versions
-            if resnet_model is None:
-                resnet_model = torch.load(
-                    "models/cotton_crop_disease_classification/full_resnet50_model.pth",
-                    map_location=torch.device("cpu"),
-                    weights_only=False,
-                )
-
-            resnet_model.eval()
+            resnet_model = torch.load(
+                'models/cotton_crop_disease_classification/full_resnet50_model.pth',
+                map_location=torch.device('cpu'),
+            )
             logger.info("ResNet50 model loaded successfully")
-
         except Exception as e:
-            logger.error(f"Error loading models: {e}")
-            raise
-
+            logger.warning(f"ResNet50 model not found or failed to load: {e}")
+            resnet_model = None
+    if yolo_model is None:
+        try:
+            yolo_model = YOLO('models/cotton_crop_growth_stage_prediction/best.pt')
+            logger.info("YOLOv8 model loaded successfully")
+        except Exception as e:
+            logger.warning(f"YOLOv8 model not found or failed to load: {e}")
+            yolo_model = None
     return resnet_model, yolo_model
 
 def ensure_models_loaded() -> None:
@@ -426,67 +410,29 @@ def preprocess_image_for_resnet(image: np.ndarray, target_size: Tuple[int, int] 
     return tensor
 
 
-def infer_disease(image: np.ndarray) -> Dict[str, Any]:
-    global resnet_model
-    if resnet_model is None:
-        resnet_model, _ = model_manager.load_models()
-
-    if resnet_model is not None:
+def infer_disease(image):
+    # Returns all disease outputs, including confidences for each class
+    if resnet_model:
         processed = preprocess_image_for_resnet(image)
         with torch.no_grad():
             output = resnet_model(processed)
             probs = F.softmax(output, dim=1)
-            _, prediction = torch.max(probs, 1)
-        probs_np = probs.detach().cpu().numpy()
+            confidence, prediction = torch.max(probs, 1)
+        probs_np = probs.numpy()  # shape: (1, 8)
+        class_idx = int(prediction.item())
+        healthy_idx = disease_classes.index("Healthy")  
+        health_score = float(probs_np[0][healthy_idx]) * 100
+
+
     else:
+        # Demo fallback
         probs_np = np.random.rand(1, len(disease_classes))
         probs_np = probs_np / probs_np.sum(axis=1, keepdims=True)
+        class_idx = int(np.argmax(probs_np[0]))
+        health_score = float(np.max(probs_np[0]))*100
 
-    probabilities = probs_np[0]
-
-    # -------------------------------------------------------------------
-    # TWO-POINTER RESOLUTION FILTER FOR OVERLAPPING DISEASES (#270 Feature)
-    # -------------------------------------------------------------------
-    indexed_probs = sorted(
-        [(float(prob), idx) for idx, prob in enumerate(probabilities)],
-        key=lambda x: x[0],
-        reverse=True
-    )
-
-    low = 0
-    high = 1
-
-    top1_conf, top1_idx = indexed_probs[low]
-    top2_conf, top2_idx = indexed_probs[high]
-
-    predicted_class = disease_classes[top1_idx]
-    alternative_class = disease_classes[top2_idx]
-
-    healthy_idx = disease_classes.index("Healthy")
-    health_score = float(probabilities[healthy_idx]) * 100
-
-    is_uncertain = top1_conf < UNCERTAINTY_THRESHOLD
-    is_ambiguous = False
-    contender_classes = []
-
-    while high < len(indexed_probs):
-        current_conf, current_idx = indexed_probs[high]
-        if abs(top1_conf - current_conf) < AMBIGUITY_MARGIN:
-            is_ambiguous = True
-            contender_classes.append(disease_classes[current_idx])
-        high += 1
-
-    interpretation_message = None
-    if is_uncertain:
-        interpretation_message = "The model could not make a confident prediction. Please upload a clearer crop image or seek expert review."
-    elif is_ambiguous:
-        if len(contender_classes) > 1:
-            contenders_str = ", ".join(contender_classes)
-            interpretation_message = f"The prediction is close between {predicted_class} and other localized indicators: {contenders_str}. Monitor the crop closely for overlapping symptoms."
-        else:
-            interpretation_message = f"The prediction is somewhat ambiguous between {predicted_class} and {alternative_class}."
-
-    disease_confidences = {disease_classes[i]: float(probabilities[i]) for i in range(len(disease_classes))}
+    # Format probabilities per class
+    disease_confidences = {disease_classes[i]: float(probs_np[0][i]) for i in range(len(disease_classes))}
 
     return {
         "predicted_class": predicted_class,
@@ -495,20 +441,10 @@ def infer_disease(image: np.ndarray) -> Dict[str, Any]:
         "all_confidences": disease_confidences,
         "health_score": health_score,
         "raw": probs_np.tolist(),
-        "detected_issue": predicted_class,
-        "model_confidence": round(top1_conf * 100, 2),
-        "alternative_prediction": {
-            "class": alternative_class,
-            "confidence": round(top2_conf * 100, 2),
-        },
-        "is_uncertain": is_uncertain,
-        "is_ambiguous": is_ambiguous,
-        "interpretation_message": interpretation_message,
     }
+    return results
 
-
-def infer_growth_stage(image: np.ndarray) -> Dict[str, Any]:
-    _, yolo_model = model_manager.load_models()
+def infer_growth_stage(image):
     result = {
         "main_class": None,
         "main_class_idx": None,
@@ -516,37 +452,34 @@ def infer_growth_stage(image: np.ndarray) -> Dict[str, Any]:
         "boxes": [],
         "raw": [],
     }
-
-    if yolo_model is None:
-        return result
-
-    pil_image = Image.fromarray(image)
-    yolo_results = yolo_model(pil_image)
-    boxes = []
-
-    for r in yolo_results:
-        if not hasattr(r, "boxes") or r.boxes is None:
-            continue
-        for b in r.boxes:
-            class_id = int(b.cls[0].item()) if hasattr(b.cls[0], "item") else int(b.cls[0])
-            conf = float(b.conf[0].item()) if hasattr(b.conf[0], "item") else float(b.conf[0])
-            xyxy = b.xyxy[0].cpu().numpy().tolist()
-            boxes.append({
-                "class_id": class_id,
-                "class_name": growth_stage_classes[class_id] if class_id < len(growth_stage_classes) else str(class_id),
-                "confidence": conf,
-                "bbox": xyxy,
+    if yolo_model:
+        pil_image = Image.fromarray(image)
+        yolo_results = yolo_model(pil_image)
+        boxes = []
+        for r in yolo_results:
+            if hasattr(r, 'boxes'):
+                for b in r.boxes:
+                    class_id = int(b.cls[0].item()) if hasattr(b.cls[0], 'item') else int(b.cls[0])
+                    conf = float(b.conf[0].item()) if hasattr(b.conf[0], 'item') else float(b.conf[0])
+                    xyxy = b.xyxy[0].cpu().numpy().tolist()
+                    boxes.append({
+                        "class_id": class_id,
+                        "class_name": growth_stage_classes[class_id] if class_id < len(growth_stage_classes) else str(class_id),
+                        "confidence": conf,
+                        "bbox": xyxy,  # [x1, y1, x2, y2]
+                    })
+            else:
+                continue
+        # Most confident box as main prediction
+        if len(boxes):
+            main = max(boxes, key=lambda x: x['confidence'])
+            result.update({
+                "main_class": main["class_name"],
+                "main_class_idx": main["class_id"],
+                "confidence": main["confidence"],
             })
-
-    if boxes:
-        main = max(boxes, key=lambda x: x["confidence"])
-        result.update({
-            "main_class": main["class_name"],
-            "main_class_idx": main["class_id"],
-            "confidence": main["confidence"],
-            "boxes": boxes,
-        })
-    result["raw"] = boxes
+            result["boxes"] = boxes
+        result["raw"] = boxes
     return result
 
 
@@ -892,6 +825,193 @@ def support():
 @app.route("/stories")
 def stories():
     return render_template("stories.html")
+
+
+@app.route("/model-admin")
+def admin_dashboard():
+    return render_template("admin.html")
+
+
+# --- Model Management Admin Endpoints ---
+
+@app.route('/admin/models', methods=['GET'])
+def list_models():
+    """List all registered models with their metadata"""
+    model_type = request.args.get('type')
+    try:
+        models = registry.list_models(model_type)
+        return jsonify({
+            "status": "success",
+            "models": models,
+            "ab_test_enabled": registry.ab_test_enabled,
+            "rollback_threshold": registry.rollback_threshold
+        })
+    except Exception as e:
+        logger.error(f"Error listing models: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/admin/models/active', methods=['GET'])
+def get_active_models():
+    """Get currently active models"""
+    try:
+        active_resnet = registry.get_active_model("resnet")
+        active_yolo = registry.get_active_model("yolo")
+        return jsonify({
+            "status": "success",
+            "active_models": {
+                "resnet": active_resnet.to_dict() if active_resnet else None,
+                "yolo": active_yolo.to_dict() if active_yolo else None
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting active models: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/admin/models/register', methods=['POST'])
+def register_model():
+    """Register a new model version"""
+    try:
+        data = request.get_json()
+        required_fields = ['model_type', 'version', 'path']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+        
+        metadata = registry.register_model(
+            model_type=data['model_type'],
+            version=data['version'],
+            path=data['path'],
+            accuracy=data.get('accuracy', 0.0),
+            dataset_version=data.get('dataset_version', 'unknown'),
+            parameters=data.get('parameters', 0),
+            is_active=data.get('is_active', False),
+            ab_test_ratio=data.get('ab_test_ratio', 0.0)
+        )
+        return jsonify({
+            "status": "success",
+            "message": f"Model {data['model_type']} version {data['version']} registered successfully",
+            "metadata": metadata.to_dict()
+        })
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        logger.error(f"Error registering model: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/admin/models/activate', methods=['POST'])
+def activate_model():
+    """Set a model version as active"""
+    try:
+        data = request.get_json()
+        required_fields = ['model_type', 'version']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+        
+        registry.set_active_model(data['model_type'], data['version'])
+        return jsonify({
+            "status": "success",
+            "message": f"Model {data['model_type']} version {data['version']} activated successfully"
+        })
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        logger.error(f"Error activating model: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/admin/models/delete', methods=['DELETE'])
+def delete_model():
+    """Delete a model version"""
+    try:
+        data = request.get_json()
+        required_fields = ['model_type', 'version']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+        
+        registry.delete_model(data['model_type'], data['version'])
+        return jsonify({
+            "status": "success",
+            "message": f"Model {data['model_type']} version {data['version']} deleted successfully"
+        })
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error deleting model: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/admin/models/ab-testing', methods=['POST'])
+def toggle_ab_testing():
+    """Enable or disable A/B testing"""
+    try:
+        data = request.get_json()
+        enabled = data.get('enabled', True)
+        registry.enable_ab_testing(enabled)
+        return jsonify({
+            "status": "success",
+            "message": f"A/B testing {'enabled' if enabled else 'disabled'}",
+            "ab_test_enabled": registry.ab_test_enabled
+        })
+    except Exception as e:
+        logger.error(f"Error toggling A/B testing: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/admin/models/ab-ratio', methods=['POST'])
+def set_ab_ratio():
+    """Set A/B testing ratio for a model version"""
+    try:
+        data = request.get_json()
+        required_fields = ['model_type', 'version', 'ratio']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+        
+        registry.set_ab_test_ratio(data['model_type'], data['version'], data['ratio'])
+        return jsonify({
+            "status": "success",
+            "message": f"A/B test ratio for {data['model_type']} version {data['version']} set to {data['ratio']}"
+        })
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error setting A/B ratio: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/admin/models/metrics', methods=['GET'])
+def get_model_metrics():
+    """Get performance metrics for all models"""
+    try:
+        models = registry.list_models()
+        return jsonify({
+            "status": "success",
+            "metrics": models
+        })
+    except Exception as e:
+        logger.error(f"Error getting model metrics: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/admin/models/rollback-threshold', methods=['POST'])
+def set_rollback_threshold():
+    """Set automatic rollback threshold"""
+    try:
+        data = request.get_json()
+        threshold = data.get('threshold')
+        if threshold is None:
+            return jsonify({"error": "Missing required field: threshold"}), 400
+        
+        if not 0.0 <= threshold <= 1.0:
+            return jsonify({"error": "Threshold must be between 0.0 and 1.0"}), 400
+        
+        registry.rollback_threshold = threshold
+        registry.save_config()
+        return jsonify({
+            "status": "success",
+            "message": f"Rollback threshold set to {threshold}",
+            "rollback_threshold": registry.rollback_threshold
+        })
+    except Exception as e:
+        logger.error(f"Error setting rollback threshold: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/dashboard")
@@ -1282,301 +1402,28 @@ def api_weather():
 
 @app.route("/api/analyze", methods=["POST"])
 def api_analyze():
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
-    file = request.files["file"]
-    if file.filename == "":
-        return jsonify({"error": "No file selected"}), 400
-    if not is_allowed_image(file.filename):
-        return jsonify({'error': 'Invalid file type. Please upload a valid image.'}), 400
-
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
     try:
         file_bytes = np.frombuffer(file.read(), np.uint8)
-
-        if is_pytest_mode():
-            image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-            if image is None:
-                return jsonify({"error": "Invalid image file"}), 400
-            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            compressed_rgb = resize_image(image_rgb, MAX_INFERENCE_DIMENSION)
-            results = analyze_image(compressed_rgb)
-            if results.get("error"):
-                return jsonify({"error": results["error"]}), 400
-            return jsonify({"status": "success", "timestamp": datetime.now().isoformat(), "results": results}), 200
-
-        from celery_worker import process_inference_task
-        task = process_inference_task.delay(file_bytes.tolist())
-        return jsonify({
-            "status": "processing",
-            "task_id": task.id,
-            "message": "Image analysis has started in the background. Use the task_id to poll for results.",
-        }), 202
-
-    except Exception as exc:
-        logger.error("API analysis trigger error: %s", exc)
-        return jsonify({"error": str(exc)}), 500
-
-
-@app.route("/api/explain", methods=["POST"])
-def api_explain():
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
-    file = request.files["file"]
-    if file.filename == "":
-        return jsonify({"error": "No file selected"}), 400
-    if not is_allowed_image(file.filename):
-        return jsonify({'error': 'Invalid file type. Please upload a valid image.'}), 400
-
-    try:
-        safe_filename, image, image_rgb = read_uploaded_image(file)
-        compressed_rgb = resize_image(image_rgb, MAX_INFERENCE_DIMENSION)
-        results = analyze_image(compressed_rgb)
-        
-        if results.get("error"):
-            return jsonify({"error": results["error"]}), 400
-            
-        disease = results.get("disease", {})
-        
+        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        if image is None:
+            return jsonify({'error': 'Invalid image file'}), 400
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = analyze_image(image_rgb)
         return jsonify({
             "status": "success",
             "timestamp": datetime.now().isoformat(),
-            "filename": safe_filename,
-            "predicted_class": disease.get("predicted_class"),
-            "confidence": disease.get("confidence"),
-            "health_score": disease.get("health_score"),
-            "image_b64": encode_image_for_display(image_rgb),
-            "heatmap_b64": results.get("grad_cam_image_b64"),
-            "heatmap_only_b64": results.get("heatmap_only_b64"),
-            "target_layer": "ResNet50 layer4[-1]",
-            "all_confidences": disease.get("all_confidences", {})
-        }), 200
+            "results": results
+        })
+    except Exception as e:
+        logger.error(f"API analysis error: {e}")
+        return jsonify({'error': str(e)}), 500
 
-    except Exception as exc:
-        logger.error("API explain error: %s", exc)
-        return jsonify({"error": str(exc)}), 500
-
-
-@app.route("/api/task/<task_id>", methods=["GET"])
-def get_task_status(task_id):
-    if is_pytest_mode():
-        return jsonify({
-            "state": "DISABLED",
-            "status": "Async Celery result polling is disabled during tests because inference runs synchronously.",
-            "task_id": task_id,
-        }), 200
-
-    from celery_worker import process_inference_task
-    task = process_inference_task.AsyncResult(task_id)
-
-    if task.state == "PENDING":
-        response = {"state": task.state, "status": "Task is waiting in the queue..."}
-    elif task.state != "FAILURE":
-        response = {
-            "state": task.state,
-            "status": task.info.get("status", "") if isinstance(task.info, dict) else task.info,
-        }
-        if task.state == "SUCCESS":
-            response["result"] = task.result
-    else:
-        response = {"state": task.state, "status": str(task.info)}
-    return jsonify(response)
-
-
-@app.route("/api/analyze_stream", methods=["POST"])
-def api_analyze_stream():
-    def generate():
-        import json as _json
-
-        def event(name: str, progress: int, message: str, data: Optional[Dict[str, Any]] = None):
-            payload = {"step": name, "progress": progress, "message": message}
-            if data is not None:
-                payload["data"] = data
-            return f"data: {_json.dumps(payload)}\n\n"
-
-        try:
-            if "file" not in request.files:
-                yield event("error", 0, "No file uploaded.")
-                return
-            file = request.files["file"]
-            if file.filename == "":
-                yield event("error", 0, "No file selected.")
-                return
-            yield event("upload_received", 10, "File received successfully.")
-        except Exception as exc:
-            yield event("error", 0, f"File error: {str(exc)}")
-            return
-
-        try:
-            safe_filename, image, image_rgb = read_uploaded_image(file)
-            compressed_rgb = resize_image(image_rgb, MAX_INFERENCE_DIMENSION)
-            image_b64 = encode_image_for_display(image_rgb)
-            img_shape = {"width": image.shape[1], "height": image.shape[0]}
-            yield event("preprocessing", 25, "Image preprocessed and compressed.")
-        except Exception as exc:
-            yield event("error", 25, f"Preprocessing failed: {str(exc)}")
-            return
-
-        try:
-            growth = infer_growth_stage(compressed_rgb)
-            yield event("growth_inference", 50, f"Growth stage detected: {growth.get('main_class', 'Unknown')}")
-        except Exception as exc:
-            yield event("error", 50, f"Growth stage inference failed: {str(exc)}")
-            return
-
-        try:
-            disease = infer_disease(compressed_rgb)
-            yield event("disease_inference", 75, f"Disease classified: {disease.get('predicted_class', 'Unknown')} ({round(disease.get('confidence', 0) * 100, 1)}% confidence)")
-        except Exception as exc:
-            yield event("error", 75, f"Disease classification failed: {str(exc)}")
-            return
-
-        try:
-            # Generate Grad-CAM heatmaps for stream
-            grad_cam_image_b64 = None
-            heatmap_only_b64 = None
-            
-            image_hash = hashlib.sha256(compressed_rgb.tobytes()).hexdigest()
-            cached_result = get_cached_grad_cam(image_hash)
-            
-            if cached_result is not None:
-                grad_cam_image_b64, heatmap_only_b64 = cached_result
-                logger.info("Using cached Grad-CAM for stream")
-            else:
-                resnet_model, _ = model_manager.load_models()
-                if resnet_model is not None and disease.get("predicted_class_idx") is not None:
-                    try:
-                        input_tensor = preprocess_image_for_resnet(compressed_rgb)
-                        with GradCAM(resnet_model, resnet_model.layer4[-1]) as grad_cam:
-                            grad_cam_overlay = grad_cam(input_tensor, disease["predicted_class_idx"], compressed_rgb)
-                            heatmap_np = getattr(grad_cam, "heatmap_np", None)
-                        if grad_cam_overlay is not None:
-                            grad_cam_image_b64 = encode_image_for_display(grad_cam_overlay)
-                        if heatmap_np is not None:
-                            pure_heatmap_rgb = generate_pure_heatmap(compressed_rgb, heatmap_np)
-                            heatmap_only_b64 = encode_image_for_display(pure_heatmap_rgb)
-                    except Exception as exc:
-                        logger.error("Error generating Grad-CAM for stream: %s", exc)
-
-                if grad_cam_image_b64 is None or heatmap_only_b64 is None:
-                    try:
-                        mock_heatmap = generate_mock_heatmap(compressed_rgb)
-                        mock_overlay = apply_heatmap_on_image(compressed_rgb, mock_heatmap)
-                        grad_cam_image_b64 = encode_image_for_display(mock_overlay)
-                        
-                        pure_heatmap_rgb = generate_pure_heatmap(compressed_rgb, mock_heatmap)
-                        heatmap_only_b64 = encode_image_for_display(pure_heatmap_rgb)
-                    except Exception as exc:
-                        logger.error("Error generating fallback heatmap for stream: %s", exc)
-                
-                if grad_cam_image_b64 and heatmap_only_b64:
-                    set_cached_grad_cam(image_hash, grad_cam_image_b64, heatmap_only_b64)
-
-            disease["heatmap_b64"] = grad_cam_image_b64
-            disease["heatmap_only_b64"] = heatmap_only_b64
-
-            results = {
-                "disease": disease,
-                "growth": growth,
-                "recommendations": generate_recommendations(disease, growth),
-                "grad_cam_image_b64": grad_cam_image_b64,
-                "heatmap_only_b64": heatmap_only_b64,
-                "error": None,
-            }
-            if growth.get("main_class") is None:
-                results["warnings"] = ["Growth stage could not be confidently detected.", "Disease analysis is still provided based on the uploaded crop image."]
-            yield event("recommendations", 90, "Recommendations generated.")
-        except Exception as exc:
-            yield event("error", 90, f"Recommendation generation failed: {str(exc)}")
-            return
-
-        weather, yield_estimate = None, None
-        try:
-            lat = request.form.get("lat", type=float)
-            lon = request.form.get("lon", type=float)
-            city = request.form.get("city", type=str)
-
-            if lat is not None and lon is not None:
-                owm_key = os.getenv("OPENWEATHER_API_KEY")
-                weather = get_weather(lat, lon, owm_key)
-            elif city:
-                geo = geocode_city(city)
-                if geo:
-                    owm_key = os.getenv("OPENWEATHER_API_KEY")
-                    weather = get_weather(geo["lat"], geo["lon"], owm_key)
-
-            if weather and results.get("disease") and results.get("growth"):
-                results["recommendations"] = (results.get("recommendations", []) + generate_weather_recommendations(weather))[:6]
-                results["weather"] = weather
-
-            field_acres = request.form.get("field_acres", type=float) or 1.0
-            if results.get("disease") and results.get("growth"):
-                yield_estimate = estimate_yield(results["disease"], results["growth"], weather, field_acres)
-        except Exception as exc:
-            logger.warning("Weather/yield enrichment failed: %s", exc)
-
-        try:
-            complete_payload = {
-                "results": results,
-                "filename": safe_filename,
-                "image_b64": image_b64,
-                "img_shape": img_shape,
-                "raw_json": _json.dumps(results, indent=2),
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "weather": weather,
-                "yield_estimate": yield_estimate,
-                "grad_cam_image_b64": grad_cam_image_b64,
-                "heatmap_only_b64": heatmap_only_b64,
-            }
-            yield event("complete", 100, "Analysis complete!", data=complete_payload)
-        except Exception as exc:
-            yield event("error", 95, f"Failed to finalise results: {str(exc)}")
-            return
-
-    return Response(stream_with_context(generate()), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-
-
-@app.route("/analyze_result", methods=["POST"])
-def analyze_result():
-    try:
-        raw = request.form.get("payload", "")
-        if not raw:
-            flash("No analysis data received.", "error")
-            return redirect(url_for("analyze"))
-
-        payload = json.loads(raw)
-        results = payload.get("results", {})
-        filename = payload.get("filename", "unknown")
-        image_b64 = payload.get("image_b64", "")
-        img_shape = payload.get("img_shape", {})
-        raw_json = payload.get("raw_json", "{}")
-        timestamp = payload.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        weather = payload.get("weather")
-        yield_estimate = payload.get("yield_estimate")
-
-        if results.get("error"):
-            flash(results["error"], "error")
-            return redirect(url_for("analyze"))
-
-        return render_template(
-            "results.html",
-            results=results,
-            filename=filename,
-            image_b64=image_b64,
-            img_shape=img_shape,
-            raw_json=raw_json,
-            timestamp=timestamp,
-            weather=weather,
-            yield_estimate=yield_estimate,
-            grad_cam_image_b64=results.get("grad_cam_image_b64"),
-            heatmap_only_b64=results.get("heatmap_only_b64"),
-        )
-    except Exception as exc:
-        logger.error("analyze_result error: %s", exc)
-        flash(f"Failed to render results: {str(exc)}", "error")
-        return redirect(url_for("analyze"))
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     logger.info("=" * 60)
     logger.info("Agri-Vision Cotton Analysis System")
     logger.info("=" * 60)
