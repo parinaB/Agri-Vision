@@ -2,6 +2,7 @@
 Agri-Vision Flask Application
 Unified inference for disease classification (ResNet50) and growth stage prediction (YOLOv8)
 """
+import hashlib
 import logging
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file
 import os
@@ -10,6 +11,7 @@ import re
 import threading
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
+from werkzeug.utils import secure_filename
 
 import cv2
 import numpy as np
@@ -43,6 +45,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
+
+# --- Security Configuration ---
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # Limits upload size to 5MB
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+# ------------------------------
 
 class CustomRequest(Request):
     max_form_memory_size = 25 * 1024 * 1024  # Support larger base64-encoded forms
@@ -1142,14 +1153,15 @@ def health():
     ensure_models_loaded()
     diagnostics = model_manager.diagnostics()
     model_loaded = diagnostics["resnet"]["loaded"] and diagnostics["yolo"]["loaded"]
+    status_code = 200 if model_loaded else 503
     return jsonify({
-        "status": "healthy",
+        "status": "healthy" if model_loaded else "degraded",
         "mode": "ready" if model_loaded else "degraded",
         "timestamp": datetime.now().isoformat(),
         "model_loaded": model_loaded,
         "models": diagnostics,
         "service": "Agri-Vision Cotton Analysis API",
-    })
+    }), status_code
 
 
 @app.route("/analyze", methods=["GET", "POST"])
@@ -1511,7 +1523,9 @@ def api_weather():
 def api_analyze():
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
+    
     file = request.files['file']
+    
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
     try:
