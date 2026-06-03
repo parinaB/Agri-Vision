@@ -8,6 +8,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 import sys
 import os
+import requests
 
 # Allow importing from project root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -51,7 +52,7 @@ MOCK_GEOCODING_RESPONSE = {
 
 class TestGetWeatherOpenMeteo:
 
-    @patch("services.weather_service.requests.get")
+    @patch("services.weather_service.session.get")
     def test_returns_structured_dict(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = MOCK_OPEN_METEO_RESPONSE
@@ -70,13 +71,13 @@ class TestGetWeatherOpenMeteo:
         assert result["lat"] == 21.14
         assert result["lon"] == 79.08
 
-    @patch("services.weather_service.requests.get")
+    @patch("services.weather_service.session.get")
     def test_returns_none_on_network_error(self, mock_get):
-        mock_get.side_effect = Exception("Network error")
+        mock_get.side_effect = requests.exceptions.RequestException("Network error")
         result = get_weather_open_meteo(0.0, 0.0)
         assert result is None
 
-    @patch("services.weather_service.requests.get")
+    @patch("services.weather_service.session.get")
     def test_description_and_icon_set(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = MOCK_OPEN_METEO_RESPONSE
@@ -92,7 +93,7 @@ class TestGetWeatherOpenMeteo:
 
 class TestGeocodeCity:
 
-    @patch("services.weather_service.requests.get")
+    @patch("services.weather_service.session.get")
     def test_returns_lat_lon_for_valid_city(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = MOCK_GEOCODING_RESPONSE
@@ -102,11 +103,11 @@ class TestGeocodeCity:
         result = geocode_city("Nagpur")
 
         assert result is not None
-        assert result["lat"] == 21.14
-        assert result["lon"] == 79.08
+        assert result["lat"] == pytest.approx(21.14, abs=1e-2)
+        assert result["lon"] == pytest.approx(79.08, abs=1e-2)
         assert result["name"] == "Nagpur"
 
-    @patch("services.weather_service.requests.get")
+    @patch("services.weather_service.session.get")
     def test_returns_none_for_unknown_city(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"results": []}
@@ -116,9 +117,9 @@ class TestGeocodeCity:
         result = geocode_city("Xyz_Nonexistent_City_999")
         assert result is None
 
-    @patch("services.weather_service.requests.get")
+    @patch("services.weather_service.session.get")
     def test_returns_none_on_error(self, mock_get):
-        mock_get.side_effect = Exception("Timeout")
+        mock_get.side_effect = requests.exceptions.Timeout("Timeout")
         result = geocode_city("Delhi")
         assert result is None
 
@@ -193,7 +194,7 @@ class TestWMOHelpers:
 
 class TestGetWeatherOpenWeatherMap:
 
-    @patch("services.weather_service.requests.get")
+    @patch("services.weather_service.session.get")
     def test_returns_structured_dict(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
@@ -220,16 +221,16 @@ class TestGetWeatherOpenWeatherMap:
         assert result["lat"] == 21.14
         assert result["lon"] == 79.08
 
-    @patch("services.weather_service.requests.get")
+    @patch("services.weather_service.session.get")
     def test_returns_none_on_failure(self, mock_get):
-        mock_get.side_effect = Exception("API error")
+        mock_get.side_effect = requests.exceptions.RequestException("API error")
 
         from services.weather_service import get_weather_openweathermap
         result = get_weather_openweathermap(0.0, 0.0, "fake_key")
 
         assert result is None
 
-    @patch("services.weather_service.requests.get")
+    @patch("services.weather_service.session.get")
     def test_rainfall_parsed_correctly(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()

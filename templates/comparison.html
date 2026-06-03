@@ -5,13 +5,13 @@
     <div class="comparison-shell">
         <div class="comparison-hero glass-card fade-in">
             <div>
-                <span class="comparison-kicker">AI FIELD MONITORING</span>
-                <h1>Field Photo Comparison</h1>
-                <p>Compare last week's cotton field photo with the current week using the same disease prediction model that powers Agri-Vision analysis.</p>
+                <span class="comparison-kicker" data-i18n="comp_hero_badge">AI FIELD MONITORING</span>
+                <h1 data-i18n="nav_comparison">Field Photo Comparison</h1>
+                <p data-i18n="comp_hero_desc">Compare last week's cotton field photo with the current week using the same disease prediction model that powers Agri-Vision analysis.</p>
             </div>
             <div class="comparison-hero-badge">
                 <i class="fas fa-brain"></i>
-                <span>ResNet50 + Crop Health Score</span>
+                <span data-i18n="comp_model_badge">ResNet50 + Crop Health Score</span>
             </div>
         </div>
 
@@ -25,55 +25,79 @@
                 <div class="comparison-card-header">
                     <span class="comparison-step">01</span>
                     <div>
-                        <h2>Last Week Field Image</h2>
-                        <p>Baseline crop condition</p>
+                        <h2 data-i18n="comp_old_title">Last Week Field Image</h2>
+                        <p data-i18n="comp_old_subtitle">Baseline crop condition</p>
                     </div>
                 </div>
                 <label class="comparison-dropzone" for="lastWeekInput" id="dropzone-lastWeek">
-                    <input type="file" id="lastWeekInput" name="last_week_image" accept="image/*" required data-preview-target="lastWeekPreview" data-file-label="lastWeekFile">
-                    <span class="comparison-upload-icon"><i class="fas fa-cloud-arrow-up"></i></span>
-                    <strong>Upload last week photo</strong>
-                    <small>All formats supported (Max 5MB)</small>
+                  <input type="file" id="lastWeekInput" name="last_week_image" accept="*/*" required data-preview-target="lastWeekPreview" data-file-label="lastWeekFile">
+                    <div class="upload-placeholder">
+                        <span class="comparison-upload-icon">
+                            <i class="fas fa-cloud-arrow-up"></i>
+                        </span>
+                        <strong>Upload last week photo</strong>
+                    
+                        <small>All formats supported (Max 5MB)</small>
+                    </div>
+                    <img id="lastWeekPreview"
+                         src=""
+                         style="display:none; width:100%; height:100%; object-fit:cover; border-radius:12px;">
+                                    
+                    <button type="button"
+                            class="remove-image-btn"
+                            onclick="removeImage('lastWeekInput','lastWeekPreview','lastWeekFile', this)">
+                            <i class="fas fa-times"></i>
+                    </button>
+                    <span id="lastWeekFile">No image selected</span>
                 </label>
-                <div class="comparison-preview-frame">
-                    {% if old_image_b64 %}
-                        <img id="lastWeekPreview" src="data:image/jpeg;base64,{{ old_image_b64 }}" alt="Last week field preview">
-                    {% else %}
-                        <img id="lastWeekPreview" src="" alt="Last week field preview">
-                    {% endif %}
-                    <span id="lastWeekFile">{{ old_filename if old_filename else "No image selected" }}</span>
-                </div>
             </div>
 
             <div class="comparison-upload-card glass-card" data-upload-card>
                 <div class="comparison-card-header">
                     <span class="comparison-step">02</span>
                     <div>
-                        <h2>Current Week Field Image</h2>
-                        <p>Latest crop condition</p>
+                        <h2 data-i18n="comp_new_title">Current Week Field Image</h2>
+                        <p data-i18n="comp_new_subtitle">Latest crop condition</p>
                     </div>
                 </div>
                 <label class="comparison-dropzone" for="currentWeekInput" id="dropzone-currentWeek">
-                    <input type="file" id="currentWeekInput" name="current_week_image" accept="image/*" required data-preview-target="currentWeekPreview" data-file-label="currentWeekFile">
-                    <span class="comparison-upload-icon"><i class="fas fa-leaf"></i></span>
-                    <strong>Upload current week photo</strong>
-                    <small>All formats supported (Max 5MB)</small>
-                </label>
+                
+                    <input type="file"
+                           id="currentWeekInput"
+                           name="current_week_image"
+                           accept="*/*"
+                           required
+                           data-preview-target="currentWeekPreview"
+                           data-file-label="currentWeekFile">
+                
+                    <div class="upload-placeholder">
+                        <span class="comparison-upload-icon">
+                            <i class="fas fa-leaf"></i>
+                        </span>
+                
+                        <strong>Upload current week photo</strong>
+                
+                        <small>All formats supported (Max 5MB)</small>
+                    </div>
+                
+                    <img id="currentWeekPreview"
+                         src=""
+                         style="display:none; width:100%; height:100%; object-fit:cover; border-radius:12px;">
+                    <button type="button"
+                            class="remove-image-btn"
+                            onclick="removeImage('currentWeekInput','currentWeekPreview','currentWeekFile', this)">
+                            <i class="fas fa-times"></i>
+                    </button>
+                    <span id="currentWeekFile">No image selected</span>
+                
+              </label>
                 <div id="duplicate-warning" style="display:none; color: #ff6b6b; font-size: 0.85rem; margin-top: 0.75rem; text-align: center; font-weight: 500;">
                     <i class="fas fa-exclamation-circle"></i> Please upload a different image for comparison.
-                </div>
-                <div class="comparison-preview-frame">
-                    {% if new_image_b64 %}
-                        <img id="currentWeekPreview" src="data:image/jpeg;base64,{{ new_image_b64 }}" alt="Current week field preview">
-                    {% else %}
-                        <img id="currentWeekPreview" src="" alt="Current week field preview">
-                    {% endif %}
-                    <span id="currentWeekFile">{{ new_filename if new_filename else "No image selected" }}</span>
-                </div>
+              </div>
             </div>
 
             <div class="comparison-submit-row">
-                <button type="submit" class="btn btn-primary comparison-submit">
+                <button type="submit" class="btn btn-primary comparison-submit" data-i18n="comp_btn_submit">
                     <i class="fas fa-chart-line"></i>
                     Compare Field Health
                 </button>
@@ -86,8 +110,8 @@
                 <i class="fas fa-exclamation-triangle"></i>
             </div>
             <div>
-                <h2>Unable to compare images</h2>
-                <p>{{ error_message }}</p>
+                <h2 data-i18n="comp_err_title">Unable to compare images</h2>
+                <p data-i18n="{{ error_message }}">{{ error_message }}</p>
             </div>
         </div>
         {% endif %}
@@ -98,17 +122,17 @@
                 <i class="fas fa-triangle-exclamation"></i>
             </div>
             <div>
-                <h2>Comparison may be less reliable</h2>
-                <p>Some images did not return a confirmed cotton growth stage. Disease analysis is still shown, but review the photo quality or try clearer field images.</p>
+                <h2 data-i18n="comp_warn_title">Comparison may be less reliable</h2>
+                <p data-i18n="comp_warn_desc">Some images did not return a confirmed cotton growth stage. Disease analysis is still shown, but review the photo quality or try clearer field images.</p>
                 <ul>
                     {% if old_results is defined and old_results.warnings %}
                         {% for warning in old_results.warnings %}
-                            <li>Last week image: {{ warning }}</li>
+                            <li><span data-i18n="comp_old_label">Last week image:</span> <span data-i18n="{{ warning }}">{{ warning }}</span></li>
                         {% endfor %}
                     {% endif %}
                     {% if new_results is defined and new_results.warnings %}
                         {% for warning in new_results.warnings %}
-                            <li>Current week image: {{ warning }}</li>
+                            <li><span data-i18n="comp_new_label">Current week image:</span> <span data-i18n="{{ warning }}">{{ warning }}</span></li>
                         {% endfor %}
                     {% endif %}
                 </ul>
@@ -123,52 +147,56 @@
                     <i class="fas {{ comparison.trend.icon }}"></i>
                 </div>
                 <div>
-                    <span class="comparison-kicker">TREND</span>
-                    <h2>{{ comparison.trend.label }} by {{ comparison.abs_change_percentage|round(1) }}%</h2>
-                    <p>{{ comparison.recommendation }}</p>
+                    <span class="comparison-kicker" data-i18n="comp_trend_kicker">TREND</span>
+                    <h2>
+                        <span data-i18n="{{ comparison.trend.label }}">{{ comparison.trend.label }}</span> 
+                        <span data-i18n="comp_by">by</span> 
+                        {{ comparison.abs_change_percentage|round(1) }}%
+                    </h2>
+                    <p data-i18n="{{ comparison.recommendation }}">{{ comparison.recommendation }}</p>
                 </div>
             </div>
 
             <div class="comparison-metrics-grid">
                 <div class="comparison-result-card">
-                    <span>Old Prediction</span>
-                    <h3>{{ old_results.disease.predicted_class }}</h3>
-                    <p>{{ old_results.disease.confidence|round(2) }} confidence</p>
+                    <span data-i18n="comp_old_pred">Old Prediction</span>
+                    <h3 data-i18n="{{ old_results.disease.predicted_class }}">{{ old_results.disease.predicted_class }}</h3>
+                    <p>{{ old_results.disease.confidence|round(2) }} <span data-i18n="comp_conf">confidence</span></p>
                     <div class="comparison-score-bar">
                         <span style="width: {{ comparison.old_score|round(0) }}%;"></span>
                     </div>
-                    <strong>{{ comparison.old_score|round(1) }}% health score</strong>
+                    <strong>{{ comparison.old_score|round(1) }}% <span data-i18n="res_health">health score</span></strong>
                 </div>
 
                 <div class="comparison-result-card current">
-                    <span>New Prediction</span>
-                    <h3>{{ new_results.disease.predicted_class }}</h3>
-                    <p>{{ new_results.disease.confidence|round(2) }} confidence</p>
+                    <span data-i18n="comp_new_pred">New Prediction</span>
+                    <h3 data-i18n="{{ new_results.disease.predicted_class }}">{{ new_results.disease.predicted_class }}</h3>
+                    <p>{{ new_results.disease.confidence|round(2) }} <span data-i18n="comp_conf">confidence</span></p>
                     <div class="comparison-score-bar">
                         <span style="width: {{ comparison.new_score|round(0) }}%;"></span>
                     </div>
-                    <strong>{{ comparison.new_score|round(1) }}% health score</strong>
+                    <strong>{{ comparison.new_score|round(1) }}% <span data-i18n="res_health">health score</span></strong>
                 </div>
 
                 <div class="comparison-result-card delta trend-{{ comparison.trend.status }}">
-                    <span>Improvement/Decline</span>
+                    <span data-i18n="comp_change_title">Improvement/Decline</span>
                     <h3>
                         {% if comparison.change_percentage > 0 %}+{% endif %}{{ comparison.change_percentage|round(1) }}%
                     </h3>
-                    <p>{{ comparison.trend.label }} crop health</p>
+                    <p><span data-i18n="{{ comparison.trend.label }}">{{ comparison.trend.label }}</span> <span data-i18n="comp_crop_health">crop health</span></p>
                     <i class="fas {{ comparison.trend.icon }}"></i>
                 </div>
             </div>
 
             <div class="comparison-analysis-grid recommendation-only">
                 <div class="ai-recommendation-card glass-card">
-                    <span class="comparison-kicker">AI RECOMMENDATION</span>
-                    <h2>Next Field Action</h2>
-                    <p>{{ comparison.recommendation }}</p>
+                    <span class="comparison-kicker" data-i18n="comp_ai_recs">AI RECOMMENDATION</span>
+                    <h2 data-i18n="comp_next_action">Next Field Action</h2>
+                    <p data-i18n="{{ comparison.recommendation }}">{{ comparison.recommendation }}</p>
                     <div class="comparison-mini-meta">
                         <span><i class="fas fa-calendar-check"></i> {{ timestamp }}</span>
                         {% if new_results.growth.main_class %}
-                            <span><i class="fas fa-seedling"></i> {{ new_results.growth.main_class }}</span>
+                            <span><i class="fas fa-seedling"></i> <span data-i18n="{{ new_results.growth.main_class }}">{{ new_results.growth.main_class }}</span></span>
                         {% endif %}
                     </div>
                 </div>
@@ -200,6 +228,31 @@ function showError(message, inputId) {
     if (inputId === 'currentWeekInput' && message.includes('Duplicate')) {
         if (duplicateWarning) duplicateWarning.style.display = 'block';
     }
+}
+
+
+function removeImage(inputId, previewId, labelId, button) {
+
+    const input = document.getElementById(inputId);
+    const preview = document.getElementById(previewId);
+    const label = document.getElementById(labelId);
+
+    input.value = "";
+
+    preview.src = "";
+    preview.style.display = "none";
+
+    label.textContent = "No image selected";
+
+    const dropzone = input.closest(".comparison-dropzone");
+
+    const placeholder = dropzone.querySelector(".upload-placeholder");
+
+    if (placeholder) {
+        placeholder.style.display = "block";
+    }
+
+    button.style.display = "none";
 }
 
 function hideError() {
@@ -279,8 +332,16 @@ document.addEventListener("DOMContentLoaded", function() {
                 img.onload = function() {
                     if (preview) {
                         preview.src = event.target.result;
-                        const frame = preview.closest(".comparison-preview-frame");
-                        if (frame) frame.classList.add("has-image");
+                        preview.style.display = "block";
+                        const removeBtn = preview.nextElementSibling;
+
+                    if (removeBtn) {
+                        removeBtn.style.display = "flex";
+                    }
+                        const placeholder = input.closest(".comparison-dropzone")
+                                                 .querySelector(".upload-placeholder");
+
+                        placeholder.style.display = "none";
                     }
                 };
                 img.onerror = function() {

@@ -1,6 +1,8 @@
 import base64
 import io
 import json
+from flask_login import login_user
+from models import User, db
 
 import cv2
 import numpy as np
@@ -9,14 +11,37 @@ import torch
 from PIL import Image
 
 import app
+import security_utils
 
 
 # --- Add Missing Fixtures Here ---
-@pytest.fixture
-def client():
+@pytest.fixture(scope="session")
+def app_with_db():
     app.app.config["TESTING"] = True
+    app.app.config["LOGIN_DISABLED"] = True
     app.app.config["UPLOAD_FOLDER"] = "./static/uploads"
-    with app.app.test_client() as client:
+    app.app.config["SECRET_KEY"] = "test-secret"
+    app.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    
+    with app.app.app_context():
+        db.create_all()
+        test_user = User(
+            id=1, 
+            email="test@example.com", 
+            full_name="Test User",
+            password_hash="pbkdf2:sha256:260000$test$test"
+        )
+        db.session.add(test_user)
+        db.session.commit()
+        yield app.app
+        db.drop_all()
+
+@pytest.fixture
+def client(app_with_db):
+    with app_with_db.test_client() as client:
+        with client.session_transaction() as sess:
+            sess['_user_id'] = '1'
+            sess['_fresh'] = True
         yield client
 
 
@@ -45,6 +70,9 @@ class MockResNetModel:
         logits = torch.zeros(1, 8)
         logits[0, 5] = 10.0
         return logits
+
+    def eval(self):
+        return self
 
 
 class MockYOLOBox:
@@ -179,6 +207,14 @@ def test_home_page_en(client):
     assert b"Agri" in resp.data or b"Vision" in resp.data
 
 
+def test_home_page_hero_demo_cta_links_to_demo(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert b'id="hero-demo-link"' in resp.data
+    assert b'href="/demo"' in resp.data
+    assert b"View Demo" in resp.data
+
+
 def test_home_page_te(client):
     resp = client.get("/?lang=te")
     assert resp.status_code == 200
@@ -207,9 +243,9 @@ def test_health_check_endpoint_fallback(client, monkeypatch):
     monkeypatch.setattr(app.model_manager, "yolo_model", None)
     monkeypatch.setattr(app.model_manager, "loaded", True)
     resp = client.get("/health")
-    assert resp.status_code == 200
+    assert resp.status_code == 503
     data = json.loads(resp.data)
-    assert data["status"] == "healthy"
+    assert data["status"] == "degraded"
     assert data["model_loaded"] is False
 
 
@@ -471,7 +507,71 @@ def test_post_api_analyze_invalid_image(client, invalid_file):
     assert resp.status_code == 400
     res_data = json.loads(resp.data)
     assert "error" in res_data
-    assert "Invalid image file" in res_data["error"]
+    assert "Invalid image" in res_data["error"]
+
+
+def test_post_api_analyze_rejects_mime_mismatch(client, valid_image, monkeypatch):
+    monkeypatch.setattr(security_utils, "detect_mime_type", lambda _data: "text/plain")
+    img_bytes = valid_image.getvalue()
+    data = {"file": (io.BytesIO(img_bytes), "test_cotton.png")}
+    resp = client.post("/api/analyze", data=data, content_type="multipart/form-data")
+    assert resp.status_code == 400
+    res_data = json.loads(resp.data)
+    assert "error" in res_data
+    assert "Invalid image content" in res_data["error"]
+
+
+def test_post_api_analyze_oversized_file(client, oversized_file):
+    data = {"file": (oversized_file, "large_cotton.png")}
+    resp = client.post("/api/analyze", data=data, content_type="multipart/form-data")
+    assert resp.status_code == 413
+
+
+def test_api_analyze_rate_limit(client, valid_image):
+    img_bytes = valid_image.getvalue()
+    original_limit = app.app.config.get("API_UPLOAD_RATE_LIMIT")
+    app.app.config["API_UPLOAD_RATE_LIMIT"] = "1 per minute"
+    try:
+        resp_one = client.post(
+            "/api/analyze",
+            data={"file": (io.BytesIO(img_bytes), "rate_limit.png")},
+            content_type="multipart/form-data",
+            environ_base={"REMOTE_ADDR": "10.0.0.55"},
+        )
+        assert resp_one.status_code == 200
+
+        resp_two = client.post(
+            "/api/analyze",
+            data={"file": (io.BytesIO(img_bytes), "rate_limit.png")},
+            content_type="multipart/form-data",
+            environ_base={"REMOTE_ADDR": "10.0.0.55"},
+        )
+        assert resp_two.status_code == 429
+    finally:
+        app.app.config["API_UPLOAD_RATE_LIMIT"] = original_limit
+
+
+def test_api_analyze_cleans_temp_upload(client, valid_image, tmp_path):
+    app.app.config["UPLOAD_TMP_DIR"] = str(tmp_path)
+    img_bytes = valid_image.getvalue()
+    resp = client.post(
+        "/api/analyze",
+        data={"file": (io.BytesIO(img_bytes), "cleanup.png")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_resolve_secret_key_requires_production_secret():
+    with pytest.raises(RuntimeError):
+        security_utils.resolve_secret_key({"FLASK_ENV": "production"})
+
+
+def test_sanitize_filename_strips_unicode_and_limits():
+    cleaned = security_utils.sanitize_filename("t\u00e9st\u2603_long_name.png")
+    assert cleaned.endswith(".png")
+    assert cleaned.isascii()
 
 
 def test_datetimeformat_filter():
@@ -566,3 +666,44 @@ def test_gradcam_class_initialization():
     assert res is not None
     assert res.shape == (224, 224, 3)
 
+
+def test_api_chat_test(client):
+    resp = client.get("/api/chat_test")
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    assert data == {"status": "ok"}
+
+
+def test_api_chat_empty_message(client):
+    resp = client.post("/api/chat", json={})
+    assert resp.status_code == 400
+    data = json.loads(resp.data)
+    assert "reply" in data
+    assert "didn't receive a message" in data["reply"]
+
+
+def test_api_chat_keyword_matching(client):
+    # Test "hello"
+    resp = client.post("/api/chat", json={"message": "Hello!"})
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    assert "Hello there!" in data["reply"] or "Hi!" in data["reply"]
+
+    # Test "disease"
+    resp = client.post("/api/chat", json={"message": "Spots on crop leaves"})
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    assert "Bacterial Blight" in data["reply"] or "Target Spot" in data["reply"]
+
+    # Test "yield"
+    resp = client.post("/api/chat", json={"message": "how to improve yield"})
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    assert "health score" in data["reply"] or "growth stage" in data["reply"]
+
+
+def test_api_chat_fallback_response(client):
+    resp = client.post("/api/chat", json={"message": "unknown query message"})
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    assert "Agri-Vision AI assistant" in data["reply"]
