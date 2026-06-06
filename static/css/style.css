@@ -338,6 +338,8 @@ body {
     font-size: 1.2rem;
     cursor: pointer;
     display: none;
+    align-items: center;
+    justify-content: center;
     z-index: 999;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
     transition: 0.3s;
