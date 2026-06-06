@@ -198,6 +198,17 @@ body {
     transition: background-color 0.4s ease, color 0.4s ease;
 }
 
+/* Keyboard Accessibility Focus Outlines */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+a:focus-visible {
+    outline: 2.5px solid var(--emerald-green);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 4px rgba(46, 139, 87, 0.15);
+}
+
 /* UTILITY CLASSES */
 .text-center {
     text-align: center;
