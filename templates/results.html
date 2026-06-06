@@ -70,111 +70,140 @@
       <!-- Disease Classification -->
       <div class="result-card">
         <h2 class="results-section-title">
-          <i class="fas fa-stethoscope"></i> Disease Classification (ResNet50)
+          <i class="fas fa-stethoscope"></i> Disease Analysis
         </h2>
-        <ul class="results-list">
-          <li><b>Detected Issue:</b> {{ disease.predicted_class|default("Unknown") }}
+        
+        <div class="results-list">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <b style="font-size: 1.1rem;">Detected Issue:</b> 
+              <span style="font-size: 1.2rem; color: var(--emerald-green); font-weight: 700; margin-left: 0.5rem;">
+                {{ disease.predicted_class|default("Unknown") }}
+              </span>
+            </div>
+            
             {% set d_issue = disease.predicted_class|default("Unknown") %}
             {% set d_conf = (disease.confidence|default(0)|float * 100) %}
             
-            {% if 'Healthy' in d_issue %}
-              <span class="severity-pill severity-healthy" style="margin-left: 0.5rem;"><i class="fas fa-check-circle"></i> Healthy</span>
-            {% else %}
-              {% if d_conf > 70 %}
-                <span class="severity-pill severity-high" style="margin-left: 0.5rem;"><i class="fas fa-exclamation-triangle"></i> High Severity</span>
-              {% elif d_conf >= 40 %}
-                <span class="severity-pill severity-moderate" style="margin-left: 0.5rem;"><i class="fas fa-exclamation-circle"></i> Moderate Severity</span>
+            <div class="severity-wrapper">
+              {% if 'Healthy' in d_issue %}
+                <span class="severity-pill severity-healthy"><i class="fas fa-check-circle"></i> Healthy</span>
               {% else %}
-                <span class="severity-pill" style="margin-left: 0.5rem; background: #e2e8f0; color: #475569; border: 1px solid #cbd5e1;"><i class="fas fa-info-circle"></i> Low Severity</span>
+                {% if d_conf > 70 %}
+                  <span class="severity-pill severity-high"><i class="fas fa-exclamation-triangle"></i> High Severity</span>
+                {% elif d_conf >= 40 %}
+                  <span class="severity-pill severity-moderate"><i class="fas fa-exclamation-circle"></i> Moderate Severity</span>
+                {% else %}
+                  <span class="severity-pill" style="background: #e2e8f0; color: #475569; border: 1px solid #cbd5e1;"><i class="fas fa-info-circle"></i> Low Severity</span>
+                {% endif %}
               {% endif %}
-            {% endif %}
-          </li>
+            </div>
+          </div>
           
-          <div class="confidence-meter-container" style="margin-top: 1rem;">
+          <div class="confidence-meter-container">
             <div class="meter-label-wrap">
-              <span>Prediction Reliability</span>
-              <span>{{ d_conf|round(1) }}% Confidence</span>
+              <span>Model Confidence</span>
+              <span>{{ d_conf|round(1) }}%</span>
             </div>
             <div class="confidence-progress-bg">
               <div class="confidence-progress-fill {% if d_conf > 75 %}meter-green{% elif d_conf > 50 %}meter-yellow{% else %}meter-red{% endif %}" style="width: {{ d_conf }}%;"></div>
             </div>
-            <p style="margin-top:0.8rem; color: var(--text-muted); line-height:1.6; font-size:0.85rem;">
-              Higher confidence indicates the model found stronger visual disease patterns inside the crop image.
+            <p style="margin-top: 0.8rem; color: var(--text-muted); font-size: 0.85rem; line-height: 1.4;">
+              <i class="fas fa-info-circle"></i> This score represents how certain the AI is about this specific disease pattern.
             </p>
           </div>
 
-          <li>
-            <b>Health Score:</b>
-            <div class="health-bar">
-              <div class="health-fill" style="width: {{ disease.health_score|default(0)|float|round(0) }}%;"></div>
+          <div class="health-metrics" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1rem;">
+            <div class="metric-item">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <b>Overall Health</b>
+                <span>{{ disease.health_score|default(0)|float|round(2) }}%</span>
+              </div>
+              <div class="health-bar">
+                <div class="health-fill" style="width: {{ disease.health_score|default(0)|float|round(0) }}%;"></div>
+              </div>
             </div>
-            {{ disease.health_score|default(0)|float|round(2) }}%
-          </li>
-          {% if results.disease_severity is defined and results.disease_severity %}
-          <li>
-            <b>Disease Severity:</b>
-            <div class="health-bar" style="background: rgba(0,0,0,0.1);">
-              <div class="health-fill" style="width: {{ results.disease_severity|float|round(0) }}%; background: linear-gradient(90deg, #ff4e50, #f9d423);"></div>
-            </div>
-            {{ results.disease_severity|float|round(2) }}%
-          </li>
-          {% endif %}
-        </ul>
 
-        <table class="results-table reveal-stagger">
-          <tr class="reveal reveal-fade-in">
-            <th>Disease Class</th>
-            <th>Probability</th>
-          </tr>
-          {% for cname, prob in disease_confidences.items() %}
-          <tr class="reveal reveal-fade-in">
-            <td>{{ cname }}</td>
-            <td>{{ prob|default(0)|float|round(4) }}</td>
-          </tr>
-          {% endfor %}
-        </table>
+            {% if results.disease_severity is defined and results.disease_severity %}
+            <div class="metric-item">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <b>Disease Impact</b>
+                <span>{{ results.disease_severity|float|round(2) }}%</span>
+              </div>
+              <div class="health-bar" style="background: rgba(0,0,0,0.05);">
+                <div class="health-fill" style="width: {{ results.disease_severity|float|round(0) }}%; background: linear-gradient(90deg, #ff4e50, #f9d423); box-shadow: 0 0 10px rgba(255, 78, 80, 0.3);"></div>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        <details style="margin-top: 1.5rem;">
+          <summary style="font-weight: 600; color: var(--emerald-green); cursor: pointer; font-size: 0.9rem;">
+            <i class="fas fa-chart-pie"></i> View Detailed Probabilities
+          </summary>
+          <table class="results-table" style="margin-top: 1rem;">
+            <tr>
+              <th>Disease Class</th>
+              <th>Probability</th>
+            </tr>
+            {% for cname, prob in disease_confidences.items() %}
+            <tr>
+              <td>{{ cname }}</td>
+              <td>{{ (prob|default(0)|float * 100)|round(2) }}%</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </details>
       </div>
 
       <!-- Growth Stage Detection -->
       <div class="result-card">
         <h2 class="results-section-title">
-          <i class="fas fa-seedling"></i> Growth Stage Detection (YOLOv8)
+          <i class="fas fa-seedling"></i> Growth Stage Recognition
         </h2>
         {% if growth.main_class %}
-        <ul class="results-list">
-          <li>
-            <b>Main Stage:</b>
-            <span style="font-size: 1.1rem; color: var(--emerald-green); font-weight: 700;">{{ growth.main_class }}</span>
-          </li>
-        </ul>
-
-        <div class="confidence-meter-container">
-          <div class="meter-label-wrap">
-            <span>Growth Stage Confidence</span>
-            <span>{{ (growth.confidence|default(0)|float * 100)|round(1) }}%</span>
+        <div class="results-list">
+          <div style="margin-bottom: 1.5rem;">
+            <b style="font-size: 1.1rem;">Detected Stage:</b>
+            <span style="font-size: 1.2rem; color: var(--emerald-green); font-weight: 700; margin-left: 0.5rem;">{{ growth.main_class }}</span>
           </div>
-          <div class="confidence-progress-bg">
-            {% set g_conf = (growth.confidence|default(0)|float * 100) %}
-            <div class="confidence-progress-fill {% if g_conf > 75 %}meter-green{% elif g_conf > 50 %}meter-yellow{% else %}meter-red{% endif %}" style="width: {{ g_conf }}%;"></div>
+
+          <div class="confidence-meter-container">
+            <div class="meter-label-wrap">
+              <span>Detection Confidence</span>
+              {% set g_conf = (growth.confidence|default(0)|float * 100) %}
+              <span>{{ g_conf|round(1) }}%</span>
+            </div>
+            <div class="confidence-progress-bg">
+              <div class="confidence-progress-fill {% if g_conf > 75 %}meter-green{% elif g_conf > 50 %}meter-yellow{% else %}meter-red{% endif %}" style="width: {{ g_conf }}%;"></div>
+            </div>
           </div>
         </div>
 
-        <table class="results-table reveal-stagger">
-          <tr class="reveal reveal-fade-in">
-            <th>Stage Class</th>
-            <th>Confidence</th>
-            <th>BBox</th>
-          </tr>
-          {% for box in growth_boxes %}
-          <tr class="reveal reveal-fade-in">
-            <td>{{ box.class_name }}</td>
-            <td>{{ box.confidence|default(0)|float|round(3) }}</td>
-            <td>[{{ box.bbox[0]|int }}, {{ box.bbox[1]|int }}, {{ box.bbox[2]|int }}, {{ box.bbox[3]|int }}]</td>
-          </tr>
-          {% endfor %}
-        </table>
+        <details style="margin-top: 1rem;">
+          <summary style="font-weight: 600; color: var(--emerald-green); cursor: pointer; font-size: 0.9rem;">
+            <i class="fas fa-crosshairs"></i> View Object Detection Details
+          </summary>
+          <table class="results-table" style="margin-top: 1rem;">
+            <tr>
+              <th>Detected Object</th>
+              <th>Confidence</th>
+              <th>Location (BBox)</th>
+            </tr>
+            {% for box in growth_boxes %}
+            <tr>
+              <td>{{ box.class_name }}</td>
+              <td>{{ (box.confidence|default(0)|float * 100)|round(1) }}%</td>
+              <td style="font-family: monospace; font-size: 0.8rem;">[{{ box.bbox[0]|int }}, {{ box.bbox[1]|int }}, {{ box.bbox[2]|int }}, {{ box.bbox[3]|int }}]</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </details>
         {% else %}
-        <p style="margin-bottom: 2rem; color: var(--text-muted);">No cotton growth stage detected.</p>
+        <p style="color: var(--text-muted); padding: 1rem; background: rgba(0,0,0,0.02); border-radius: 12px; border: 1px dashed var(--card-border);">
+          <i class="fas fa-info-circle"></i> No specific growth stages were clearly identified in this image.
+        </p>
         {% endif %}
       </div>
 
